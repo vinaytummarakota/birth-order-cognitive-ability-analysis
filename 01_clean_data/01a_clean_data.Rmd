@@ -1,0 +1,53 @@
+---
+title: "01a_clean_data"
+author: "Vinay Tummarakota"
+date: "2025-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("./01_helper_functions.R")
+```
+
+
+- Add indicator for non-twin sibling
+- Add a family-specific ID
+- Add a birth order column 
+
+```{r}
+df <- read.csv("../00_raw_nlsy_data/birth_order_analysis_vars.csv")
+
+new_cols <- c(
+  "case_id", 
+  "num_older_siblings", 
+  "sample_id", 
+  "race", 
+  "sex", 
+  "month_of_birth", 
+  "year_of_birth", 
+  "month_of_1981_interview",
+  "sampling_weight", 
+  "asvab_section_1_general_science",
+  "asvab_section_2_arithmetic_reasoning",
+  "asvab_section_3_word_knowledge",
+  "asvab_section_4_paragraph_comprehension",
+  "asvab_section_5_numerical_operations",
+  "asvab_section_6_coding_speed",
+  "asvab_section_7_auto_and_shop_info",
+  "asvab_section_8_mathematics_knowledge",
+  "asvab_section_9_mechanical_comp",
+  "asvab_section_10_electronics_info",
+  "age_at_interview"
+)
+
+# these columns automatically accompany the NLSY data but will not be used in this analysis
+dropped_cols <- c(
+  "race", 
+  "sex"
+)
+
+cleaned_df <- clean_df(df, colnames(df), new_cols, dropped_cols)
+write.csv(cleaned_df, "cleaned_nlsy79_data.csv", row.names = FALSE)
+```
