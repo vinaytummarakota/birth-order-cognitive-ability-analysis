@@ -1,2 +1,3 @@
 00_raw_nlsy_data/
+01_clean_data/cleaned_nlsy79_data.csv
 .Rproj.user

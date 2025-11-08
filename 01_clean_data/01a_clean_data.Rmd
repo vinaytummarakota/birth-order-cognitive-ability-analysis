@@ -12,16 +12,18 @@ source("./01_helper_functions.R")
 ```
 
 
-- Add indicator for non-twin sibling
-- Add a family-specific ID
-- Add a birth order column 
+- Add column for number of siblings who responded to NLSY
+- Add column for birth order 
+- Add indicator for being used in two-sibling analysis
+- Add indicator for being used in three-sibling analysis
 
 ```{r}
 df <- read.csv("../00_raw_nlsy_data/birth_order_analysis_vars.csv")
 
 new_cols <- c(
   "case_id", 
-  "num_older_siblings", 
+  "family_id",
+  "birth_order", 
   "sample_id", 
   "race", 
   "sex", 
@@ -50,4 +52,45 @@ dropped_cols <- c(
 
 cleaned_df <- clean_df(df, colnames(df), new_cols, dropped_cols)
 write.csv(cleaned_df, "cleaned_nlsy79_data.csv", row.names = FALSE)
+```
+
+
+```{r}
+  age_df <- cleaned_df %>%
+    filter(
+      !is.na(sibling_id)
+    ) %>%
+    select(
+      case_id, 
+      sibling_id, 
+      estimated_age
+    )
+  
+  # use dplyr::inner_join instead of merge due to faster performance
+  age_df_joined <- age_df %>%
+    inner_join(
+      age_df, 
+      by = "sibling_id", 
+      suffix = c("", "_sibling2")
+    ) %>%
+    filter(
+      case_id != case_id_sibling2
+    )
+  
+  grouped_df <- age_df_joined %>%
+    # when the two siblings' ages differ by <= 1 month, they are likely dizygotic twins
+    mutate(
+      is_likely_dz_twin = abs(estimated_age - estimated_age_sibling2) <= 1/12, 
+    ) %>%
+    select(
+      case_id, 
+      is_likely_dz_twin
+    ) %>% 
+    group_by(
+      case_id
+    ) %>% 
+    summarise(
+      is_likely_dz_twin = max(is_likely_dz_twin), 
+      is_selected_twin = 
+    )
 ```
