@@ -48,11 +48,6 @@ cleaned_df <- clean_df(df, colnames(df), new_cols, dropped_cols)
 write.csv(cleaned_df, "cleaned_nlsy79_data.csv", row.names = FALSE)
 ```
 
-Tests: 
-1. The number of rows did not change. 
-2. The number of children in each sample aligns. 
-3. The birth orders correspond to the ages of the siblings. 
-
 EDA: 
 - Table, mean and standard deviation of score by ASVAB subtest
 - Table, mean scores by birth order and ASVAB subtest
@@ -63,27 +58,7 @@ EDA:
 - Heatmap, correlation matrix between all ASVAB subtests in total population
 - Heatmap, correlation matrix between all ASVAB subtests by birth order
 
-```{r}
-
-long_df <- cleaned_df %>%
-  pivot_longer(
-    cols = starts_with("asvab"), 
-    names_to = "asvab_subtest", 
-    values_to = "score"
-  ) %>%
-  mutate(
-    age_bucket = 0.33 * round(estimated_age / 0.33)
-  ) %>%
-  group_by(
-    age_bucket, 
-    asvab_subtest
-  ) %>%
-  summarise(
-    avg_score = mean(score, na.rm = TRUE)
-  )
-
-ggplot(long_df, aes(x = age_bucket, y = avg_score))+
-  geom_point()+
-  facet_wrap(~asvab_subtest)+
-  scale_y_continuous(limits = c(35, 70))
-```
+Age-Analysis: 
+- Plot correlation matrix for each age bucket
+- Do LSEM to verify that scalar/strict invariance of the hierarchical model holds 
+- If invariance holds, then calculate de-meaned scores/z-scores

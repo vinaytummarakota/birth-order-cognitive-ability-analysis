@@ -1,0 +1,214 @@
+---
+title: "02a_age_invariance"
+author: "Vinay Tummarakota"
+date: "2025-11-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+source('./02_helper_functions.R')
+```
+
+```{r}
+df <- read.csv("../01_clean_data/cleaned_nlsy79_data.csv")
+df <- df %>%
+  filter(
+    !is.na(estimated_age), 
+    !is.na(sampling_weight), 
+    if_all(starts_with("asvab"), ~ !is.na(.))
+  )
+```
+
+## Choose Factor Structure
+
+Before we can establish that the ASVAB g-factor is measurement invariant with respect to age, we must first establish which factor structure has sufficiently good fit to the data. 
+
+### Ree and Caretta (1995)
+
+This model only yields a CFI of 0.905 and estimates the verbal/mathematical ability factor to have negative variance, so it does not have ideal fit to the data. 
+
+```{r}
+ree_and_caretta_model <- '
+  vm =~ asvab_section_2_arithmetic_reasoning
+        + asvab_section_3_word_knowledge
+        + asvab_section_4_paragraph_comprehension
+        + asvab_section_8_mathematics_knowledge
+  
+  speed =~ asvab_section_5_numerical_operations
+           + asvab_section_6_coding_speed
+       
+  tech =~ asvab_section_1_general_science
+          + asvab_section_7_auto_and_shop_info
+          + asvab_section_9_mechanical_comp
+          + asvab_section_10_electronics_info
+       
+  g =~ vm + speed + tech
+  
+  vm ~~ 0*speed
+  vm ~~ 0*tech
+  speed ~~ 0*tech
+  
+  asvab_section_2_arithmetic_reasoning ~ 0*1
+  asvab_section_5_numerical_operations ~ 0*1
+  asvab_section_1_general_science ~ 0*1
+  
+  vm ~ 1
+  speed ~ 1
+  tech ~ 1
+'
+
+ree_and_caretta_fit <- cfa(
+  data = df, 
+  model = ree_and_caretta_model, 
+  sampling.weights = "sampling_weight"
+)
+
+fitMeasures(ree_and_caretta_fit, "cfi")
+semPaths(ree_and_caretta_fit, whatLabels = 'par', intercepts = FALSE)
+```
+
+#### Top 5 Modification Indices
+
+```{r}
+ree_and_caretta_modindices <- modindices(ree_and_caretta_fit, sort = TRUE, maximum.number = 5)
+knitr::kable(head(ree_and_caretta_modindices))
+```
+
+### Deary et al (2007)
+
+This model yields a CFI of 0.955, and all factor variances are non-negative, so it has acceptable fit to the data. 
+
+*Note*: I omitted the covariances between the (1) auto shop and mechanical tests (2) auto shop and math tests even though these covariances were kept in Deary et al. 
+
+```{r}
+deary_et_al_model <- '
+  vc =~ asvab_section_3_word_knowledge
+        + asvab_section_4_paragraph_comprehension
+        + asvab_section_1_general_science
+        
+  ar =~ asvab_section_2_arithmetic_reasoning
+        + asvab_section_8_mathematics_knowledge
+  
+  ps =~ asvab_section_5_numerical_operations
+       + asvab_section_6_coding_speed
+       
+  tk =~ asvab_section_7_auto_and_shop_info
+       + asvab_section_9_mechanical_comp
+       + asvab_section_10_electronics_info
+       + asvab_section_1_general_science
+       
+  g =~ vc + ar + ps + tk
+  
+  vc ~~ 0*ar 
+  vc ~~ 0*ps
+  vc ~~ 0*tk
+  ar ~~ 0*ps
+  ar ~~ 0*tk
+  ps ~~ 0*tk
+  
+  asvab_section_3_word_knowledge ~ 0*1
+  asvab_section_2_arithmetic_reasoning ~ 0*1
+  asvab_section_5_numerical_operations ~ 0*1
+  asvab_section_7_auto_and_shop_info ~ 0*1
+  
+  vc ~ 1
+  ar ~ 1
+  ps ~ 1
+  tk ~ 1
+'
+
+deary_et_al_fit <- cfa(
+  data = df, 
+  model = deary_et_al_model, 
+  sampling.weights = "sampling_weight"
+)
+
+fitMeasures(deary_et_al_fit, "cfi")
+semPaths(deary_et_al_fit, whatLabels = 'par', intercepts = FALSE)
+```
+
+#### Top 5 Modification Indices
+
+```{r}
+deary_et_al_modindices <- modindices(deary_et_al_fit, sort = TRUE, maximum.number = 5)
+knitr::kable(head(deary_et_al_modindices))
+```
+
+## Establish Measurement Invariance 
+
+To determine whether the ASVAB g-factor is measurement invariant with respect to age, we use Local Structural Equation Modeling (LSEM). LSEM suggests that the factor structure is materially different for 16 year olds: the arithmetic reasoning (ar) and technical knowledge (tk) factors have much weaker loadings on the general cognitive ability (g) factor in this age group. 
+
+```{r}
+moderator.grid <- seq(16,23,1)
+
+local_sem <- lsem.estimate(
+  data = df, 
+  moderator="estimated_age", 
+  moderator.grid=moderator.grid,
+  lavmodel=deary_et_al_model, 
+  h = 2, 
+  sampling_weights = df$sampling_weight
+)
+
+# wrap the plotting function around tryCatch because it throws an error after plotting all parameters; I think it's a problem with the package
+tryCatch(
+  {
+    plot(local_sem, ask = FALSE)
+  }, 
+  error = function(msg) {
+    return(NA)
+  }
+)
+```
+
+To validate this qualitative finding, we can plot the correlation between g-factor scores from an LSEM where parameters area allowed to vary by age and an SEM where parameters are fixed across age group. This method is admittedly unorthodox, but I don't think there is much consensus on establishing MI in the LSEM context. 
+
+```{r}
+first_order_factors <- c("ar", "ps", "tk", "vc")
+items <- c(
+  "asvab_section_1_general_science",
+  "asvab_section_2_arithmetic_reasoning",
+  "asvab_section_3_word_knowledge",
+  "asvab_section_4_paragraph_comprehension",
+  "asvab_section_5_numerical_operations",
+  "asvab_section_6_coding_speed",
+  "asvab_section_7_auto_and_shop_info",
+  "asvab_section_8_mathematics_knowledge",
+  "asvab_section_9_mechanical_comp",
+  "asvab_section_10_electronics_info"
+)
+
+free_scores_df <- estimate_factor_scores(df, local_sem$parameters, moderator.grid, first_order_factors, items)
+
+parameter_list <- local_sem$parameters_summary %>%
+  filter(
+    !par %in% local_sem$fit_measures
+  ) %>%
+  pull(
+    par
+  )
+
+local_sem_invariant <- lsem.estimate(
+  data = df, 
+  moderator="estimated_age", 
+  moderator.grid=moderator.grid,
+  lavmodel=deary_et_al_model, 
+  h = 2, 
+  sampling_weights = df$sampling_weight, 
+  par_invariant = parameter_list
+)
+
+invariant_scores_df <- estimate_factor_scores(df, local_sem_invariant$parameters, moderator.grid, first_order_factors, items)
+
+joint_scores_df <- merge(free_scores_df, invariant_scores_df, by = c("case_id", "age_group"), suffixes = c("_free", "_invariant"))
+
+ggplot(joint_scores_df, aes(x = g_factor_score_free, y = g_factor_score_invariant, col = age_group))+
+  geom_point()+
+  geom_abline(slope = 1, intercept = 0, linetype = 'dashed')+
+  labs(x = "g-Factor Score (Parameters Freely Vary Across Ages)", y = "g-Factor Score (Parameters Fixed Across Ages)")+
+  scale_color_continuous("Age Group")+
+  theme_stata()
+```
+
