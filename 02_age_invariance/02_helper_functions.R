@@ -49,7 +49,7 @@ estimate_factor_scores_by_age <- function(df, parameters, first_order_factors, i
   direct_loadings_matrix <- first_order_loadings_matrix %*% second_order_loadings_matrix
   
   # p x n matrix of scores on all items, removing the intercepts for those items
-  residualized_items <- remove_factor_intercepts(df, parameters, first_order_loadings_matrix, first_order_factors, items)
+  residualized_items <- remove_factor_intercepts(df, parameters, direct_loadings_matrix, first_order_loadings_matrix, first_order_factors, items)
   
   # p x p matrix describing the residual variances of the items
   item_residual_variance_matrix <- create_residual_variance_matrix(parameters, items)
@@ -127,7 +127,22 @@ create_second_order_loading_matrix <- function(parameters, first_order_factors) 
   return(second_order_loadings_matrix)
 }
 
-remove_factor_intercepts <- function(df, parameters, first_order_loadings_matrix, first_order_factors, items) {
+remove_factor_intercepts <- function(df, parameters, direct_loadings_matrix, first_order_loadings_matrix, first_order_factors, items) {
+  
+  # retrieve second-order factor mean
+  second_order_factor_mean <- parameters %>%
+    filter(
+      lhs == "g", 
+      op == "~1"
+    ) %>%
+    select(
+      est
+    )
+
+  # multiply the second-order factor mean by the item loadings to yield intercepts at the item-level
+  second_order_factor_mean_vector <- as.matrix(second_order_factor_mean)
+  item_intercepts_from_second_order_factor_df <- data.frame(direct_loadings_matrix %*% second_order_factor_mean_vector) %>%
+    rownames_to_column(var = "item")
 
   # retrieve first-order factor means  
   first_order_factor_means <- parameters %>%
@@ -162,18 +177,22 @@ remove_factor_intercepts <- function(df, parameters, first_order_loadings_matrix
       item = "lhs"
     )
   
-  # calculate the total intercept for each item (item intercepts derived from first-order factor means plus item intercepts taken from the items themselves)  
-  intercepts <- item_intercepts_from_first_order_factors_df %>%
+  # calculate the total intercept for each item (sum up item intercepts derived from second-order factor means, first-order factor means, and the items themselves)  
+  intercepts <- item_intercepts_from_second_order_factor_df %>%
+    merge(
+      item_intercepts_from_first_order_factors_df, 
+      by = "item", 
+      suffixes = c("_second_order_factor_means", "_first_order_factor_means")
+    ) %>%
     merge(
       item_intercepts_from_items, 
-      by = "item", 
-      suffixes = c("_first_order_factor_means", "_item_intercepts")
+      by = "item"
     ) %>%
     mutate(
-      intercept = est_first_order_factor_means + est_item_intercepts
+      intercept = est_second_order_factor_means + est_first_order_factor_means + est
     ) %>%
     select(
-      item, 
+      item,
       intercept
     )
   

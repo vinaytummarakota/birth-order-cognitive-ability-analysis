@@ -113,7 +113,7 @@ deary_et_al_model <- '
   asvab_section_5_numerical_operations ~ 0*1
   asvab_section_7_auto_and_shop_info ~ 0*1
   
-  vc ~ 1
+  g ~ 1
   ar ~ 1
   ps ~ 1
   tk ~ 1
@@ -210,5 +210,14 @@ ggplot(joint_scores_df, aes(x = g_factor_score_free, y = g_factor_score_invarian
   labs(x = "g-Factor Score (Parameters Freely Vary Across Ages)", y = "g-Factor Score (Parameters Fixed Across Ages)")+
   scale_color_continuous("Age Group")+
   theme_stata()
+```
+
+```{r}
+complete_df <- merge(df, free_scores_df, by = "case_id") %>%
+  filter(is_in_two_sibling_sample, between(estimated_age, 18, 21))
+
+library(fixest)
+
+model <- feols(fml = g_factor_score ~ birth_order | family_id, complete_df)
 ```
 

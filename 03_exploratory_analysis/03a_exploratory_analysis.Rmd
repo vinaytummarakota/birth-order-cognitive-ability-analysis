@@ -1,0 +1,113 @@
+---
+title: "03a_exploratory_analysis"
+author: "Vinay Tummarakota"
+date: "2025-12-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(fixest)
+library(hrbrthemes)
+```
+
+```{r}
+df <- read.csv("../01_clean_data/cleaned_nlsy79_data.csv")
+
+df_pivoted <- df %>%
+  pivot_longer(
+    starts_with("asvab"), 
+    names_to = "asvab_subtest", 
+    values_to = "score"
+  ) %>%
+  mutate(
+    estimated_age_rounded = round(estimated_age)
+  )
+
+two_sibling_sample_df <- df_pivoted %>%
+  filter(
+    !is.na(estimated_age), 
+    !is.na(sampling_weight), 
+    is_in_two_sibling_sample
+  )
+```
+
+```{r fig.width = 12, fig.height = 10}
+ggplot(df_pivoted, aes(x = factor(estimated_age_rounded), y = score, weight = sampling_weight))+
+  geom_boxplot()+
+  labs(x = "Age", y = "ASVAB Subtest Score", title = "ASVAB Subtest Scores by Age")+
+  facet_wrap(~asvab_subtest)+
+  theme_stata()
+```
+
+```{r}
+# because ASVAB subtest scores clearly increase with age, we age standardized the scores to ensure comparability across age groups
+two_sibling_sample_score_summary_stats <- two_sibling_sample_df %>%
+  group_by(
+    estimated_age_rounded, 
+    asvab_subtest
+  ) %>%
+  summarise(
+    avg_score = mean(score, na.rm = TRUE), 
+    std_score = sd(score, na.rm = TRUE)
+  )
+
+standardized_two_sibling_sample_df <- merge(two_sibling_sample_df, two_sibling_sample_score_summary_stats, by = c("estimated_age_rounded", "asvab_subtest")) %>%
+  mutate(
+    standardized_score = (score - avg_score) / std_score
+  )
+
+ggplot(standardized_two_sibling_sample_df, aes(x = factor(estimated_age_rounded), y = standardized_score, weight = sampling_weight))+
+  geom_boxplot()+
+  labs(x = "Age", y = "Age-Standardized ASVAB Subtest Score", title = "Age-Standardized ASVAB Subtest Scores by Age")+
+  facet_wrap(~asvab_subtest)+
+  theme_stata()
+```
+
+
+```{r, fig.width = 12}
+items <- c(
+  "asvab_section_1_general_science",
+  "asvab_section_2_arithmetic_reasoning",
+  "asvab_section_3_word_knowledge",
+  "asvab_section_4_paragraph_comprehension",
+  "asvab_section_5_numerical_operations",
+  "asvab_section_6_coding_speed",
+  "asvab_section_7_auto_and_shop_info",
+  "asvab_section_8_mathematics_knowledge",
+  "asvab_section_9_mechanical_comp",
+  "asvab_section_10_electronics_info"
+)
+
+two_sibling_sample_effect_size_df <- data.frame(asvab_subtest = character(), effect_size = numeric(), standard_error = numeric())
+
+for(item in items) {
+  outcome_df <- standardized_two_sibling_sample_df %>%
+    filter(asvab_subtest == item)
+  
+  model <- feols(fml = standardized_score ~ birth_order | sibling_id, data = outcome_df, weights = ~ sampling_weight)
+  two_sibling_sample_effect_size_df <- rbind(
+    two_sibling_sample_effect_size_df, 
+    c(item, model$coeftable['Estimate'][[1]], model$coeftable['Std. Error'][[1]])
+  )
+}
+
+colnames(two_sibling_sample_effect_size_df) <- c("asvab_subtest", "effect_size", "standard_error")
+
+two_sibling_sample_effect_size_df <- two_sibling_sample_effect_size_df %>%
+  mutate(
+    effect_size = as.numeric(effect_size), 
+    standard_error = as.numeric(standard_error)
+  )
+
+ggplot(two_sibling_sample_effect_size_df, aes(x = asvab_subtest, y = effect_size))+
+  geom_point()+
+  geom_errorbar(aes(ymin = effect_size - 1.96 * standard_error, ymax = effect_size + 1.96 * standard_error))+
+  geom_hline(yintercept = 0, linetype = 'dashed')+
+  labs(x = "ASVAB Subtest", y = "Effect of being second-born", subtitle = "All ASVAB scores were age-standardized", title = "Effect of being second-born (relative to first-born) on ASVAB subtests")+
+  coord_flip()+ 
+  theme_stata()+
+  theme(axis.text.y = element_text(angle = 0))
+```
